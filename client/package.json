@@ -1,0 +1,20 @@
+{
+  "name": "ddns-update",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "aws4": "^1.11.0",
+    "crypto-js": "^4.0.0",
+    "moment": "^2.29.1"
+  },
+  "devDependencies": {
+    "nexe": "^3.3.7"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "nexe --output ddns-update"
+  },
+  "author": "Louis Racicot<info@louisracicot.com>",
+  "license": "ISC"
+}
