@@ -11,7 +11,7 @@ endif
 
 build:
 	npm install
-	npm run build
+	npm run build -- --target linux-x64-12.16.2
 
 install:
 	cp ddns-update $(PREFIX)/bin/

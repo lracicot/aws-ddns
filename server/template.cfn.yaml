@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Transform:
+- AWS::Serverless-2016-10-31
+
+Parameters:
+  DomainName:
+    Type: String
+  CertificateArn:
+    Type: String
+  ApiHostedZoneId:
+    Type: String
+    Default: Z2E6WEFRHH6156
+  HostedZoneId:
+    Type: String
+    Default: Z2E6WEFRHH6156
+  RecordName:
+    Type: String
+
+Globals:
+  Function:
+    Runtime: nodejs12.x
+    MemorySize: 128
+    Timeout: 5
+    Environment:
+      Variables:
+        RECORD_NAME: !Ref RecordName
+        HOSTED_ZONE_ID: !Ref HostedZoneId
+
+Resources:
+
+  Api:
+    Type: AWS::Serverless::Api
+    Properties:
+      Auth:
+        DefaultAuthorizer: AWS_IAM
+      Domain:
+        DomainName: !Ref DomainName
+        CertificateArn: !Ref CertificateArn
+        EndpointConfiguration: EDGE
+        Route53:
+          HostedZoneId: !Ref ApiHostedZoneId
+      StageName: Prod
+
+  UpdateRecordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      InlineCode: |
+        const AWS = require('aws-sdk');
+        const dns = require('dns');
+        const route53 = new AWS.Route53();
+        const recordName = process.env.RECORD_NAME;
+        const hostedZoneId = process.env.HOSTED_ZONE_ID;
+        exports.handler = (event, context, cb) => dns.lookup(recordName, (err, address) => {
+          if (err) throw err;
+          const sourceIp = event.requestContext.identity.sourceIp;
+          if (address !== sourceIp) {
+            console.log(`current: ${address}, new: ${sourceIp}`)
+            route53.changeResourceRecordSets({
+             ChangeBatch: {
+              Changes: [{ Action: "UPSERT",  ResourceRecordSet: {
+                 Name: recordName, TTL: 300, Type: "A",
+                 ResourceRecords: [{ Value: sourceIp }],
+                }}],
+             },
+             HostedZoneId: hostedZoneId
+           }, (err, data) => console.log(err ? err : data) || cb(null, {
+              statusCode: err ? 500 : 200,
+              body: data ? JSON.stringify(data) : undefined,
+            }));
+          } else {
+            const message = `No update required: ${address}`;
+            console.log(message)
+            cb(null, {statusCode: 200, body: JSON.stringify({message})})
+          }
+        });
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+            - route53:ChangeResourceRecordSets
+            - route53:ListResourceRecordSets
+            - route53:GetChange
+            Resource:
+            - !Sub "arn:aws:route53:::hostedzone/${HostedZoneId}"
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /update
+            Method: GET
+
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref RecordName
+      Type: A
+      ResourceRecords:
+        - 23.233.249.6 # Default, will drift
+      TTL: 300
+
+Outputs:
+  ApiUrl:
+    Description: Url of the api
+    Value: !Join ['', ['https://', !Ref DNSRecord]]
+    Export:
+      Name: !Join [ '-', [!Ref 'AWS::StackName', 'ApiUrl']]
+
